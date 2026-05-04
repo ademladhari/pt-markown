@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
 
-import numpy as np
 import torch
 
 from src.config import WatermarkConfig
@@ -29,7 +27,7 @@ class TreeRingWatermark:
         dist = torch.sqrt((yy - cy).float() ** 2 + (xx - cx).float() ** 2)
         r = self.cfg.ring_radius
         rw = self.cfg.ring_width
-        mask = ((dist >= r - rw) & (dist <= r + rw)).float()
+        mask = (dist >= r - rw) & (dist <= r + rw)
         return mask
 
     def build_payload(self, latent: torch.Tensor) -> WatermarkPayload:
@@ -37,21 +35,26 @@ class TreeRingWatermark:
         device = latent.device
         mask = self._build_ring_mask(h, w, device)
         gen = torch.Generator(device=device).manual_seed(self.cfg.watermark_seed)
-        msg = torch.randn((h, w), generator=gen, device=device, dtype=latent.dtype)
-        return WatermarkPayload(mask=mask, message=msg)
+        real = torch.randn((h, w), generator=gen, device=device, dtype=torch.float32)
+        imag = torch.randn((h, w), generator=gen, device=device, dtype=torch.float32)
+        message = torch.complex(real, imag) * mask.to(dtype=torch.float32)
+        return WatermarkPayload(mask=mask, message=message)
 
     def embed(self, z_t: torch.Tensor, payload: WatermarkPayload) -> torch.Tensor:
-        z_new = z_t.clone()
+        z_new = torch.nan_to_num(z_t.float()).clone()
         c = self.cfg.channel_index
-        freq = torch.fft.fft2(z_new[:, c, :, :])
-        msg_complex = payload.message.to(freq.dtype)
-        mask = payload.mask.to(freq.dtype)
-        freq = (1 - mask) * freq + mask * msg_complex
-        z_new[:, c, :, :] = torch.fft.ifft2(freq).real
-        return z_new
+        freq = torch.fft.fftshift(torch.fft.fft2(z_new[:, c, :, :]), dim=(-2, -1))
+        mask = payload.mask.to(device=freq.device)
+        message = payload.message.to(device=freq.device, dtype=freq.dtype)
+        freq = freq * (~mask).to(dtype=freq.dtype) + message
+        z_new[:, c, :, :] = torch.fft.ifft2(torch.fft.ifftshift(freq, dim=(-2, -1))).real
+        return torch.nan_to_num(z_new.to(dtype=z_t.dtype))
 
     def extract_score(self, z_t: torch.Tensor, payload: WatermarkPayload) -> torch.Tensor:
         c = self.cfg.channel_index
-        freq = torch.fft.fft2(z_t[:, c, :, :])
-        diff = payload.mask * (freq.real - payload.message)
-        return (diff.pow(2).sum(dim=(-1, -2)) / payload.mask.sum()).sqrt()
+        freq = torch.fft.fftshift(torch.fft.fft2(torch.nan_to_num(z_t.float())[:, c, :, :]), dim=(-2, -1))
+        mask = payload.mask.to(device=freq.device)
+        message = payload.message.to(device=freq.device, dtype=freq.dtype)
+        diff = mask.to(dtype=freq.dtype) * (freq - message)
+        denom = mask.float().sum().clamp_min(1.0)
+        return (diff.abs().pow(2).sum(dim=(-1, -2)) / denom).sqrt()

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import List, Tuple
 
 import torch
-from diffusers import DDIMScheduler, StableDiffusionPipeline
+from diffusers import DPMSolverMultistepScheduler, StableDiffusionPipeline
 
 from src.config import ModelConfig
 
@@ -19,7 +18,7 @@ class DiffusionCore:
             safety_checker=None,
             requires_safety_checker=False,
         ).to(cfg.device)
-        self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
+        self.pipe.scheduler = DPMSolverMultistepScheduler.from_config(self.pipe.scheduler.config)
         self.pipe.set_progress_bar_config(disable=True)
         self.pipe.unet.requires_grad_(False)
         self.pipe.vae.requires_grad_(False)
@@ -66,7 +65,7 @@ class DiffusionCore:
 
     def decode_latent(self, latent: torch.Tensor) -> torch.Tensor:
         with torch.inference_mode():
-            latent = latent / self.pipe.vae.config.scaling_factor
+            latent = (latent / self.pipe.vae.config.scaling_factor).to(dtype=self.pipe.vae.dtype)
             image = self.pipe.vae.decode(latent).sample
             image = (image / 2 + 0.5).clamp(0, 1)
         return image
@@ -79,13 +78,14 @@ class DiffusionCore:
         uncond_emb: torch.Tensor,
         guidance_scale: float,
     ) -> torch.Tensor:
-        latent_input = torch.cat([z_t, z_t], dim=0)
-        embeds = torch.cat([uncond_emb, cond_emb], dim=0)
+        z_t = torch.nan_to_num(z_t)
+        latent_input = torch.cat([z_t, z_t], dim=0).to(dtype=self.pipe.unet.dtype)
+        embeds = torch.cat([uncond_emb, cond_emb], dim=0).to(dtype=self.pipe.unet.dtype)
         noise = self.pipe.unet(latent_input, t, encoder_hidden_states=embeds).sample
         noise_uncond, noise_cond = noise.chunk(2)
         noise_guided = (noise_uncond + guidance_scale * (noise_cond - noise_uncond)).float()
         prev = self.pipe.scheduler.step(noise_guided, t, z_t.float()).prev_sample
-        return prev.to(dtype=z_t.dtype)
+        return torch.nan_to_num(prev).to(dtype=z_t.dtype)
 
     def sample_trajectory(
         self,
@@ -98,7 +98,7 @@ class DiffusionCore:
             cond, uncond = self.encode_prompt(prompt)
             self.pipe.scheduler.set_timesteps(self.cfg.num_inference_steps, device=self.cfg.device)
             trajectory = [z_t.clone()]
-            cur = z_t
+            cur = torch.nan_to_num(z_t)
             for t in self.pipe.scheduler.timesteps:
                 cur = self.denoise_step(cur, t, cond, uncond, g)
                 trajectory.append(cur.clone())
