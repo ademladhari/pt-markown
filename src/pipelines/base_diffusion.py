@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import copy
 from typing import List, Tuple
 
 import torch
-from diffusers import DPMSolverMultistepScheduler, StableDiffusionPipeline
+from diffusers import DDIMScheduler, StableDiffusionPipeline
 
 from src.config import ModelConfig
 
@@ -18,7 +19,8 @@ class DiffusionCore:
             safety_checker=None,
             requires_safety_checker=False,
         ).to(cfg.device)
-        self.pipe.scheduler = DPMSolverMultistepScheduler.from_config(self.pipe.scheduler.config)
+        # PT-Mark relies on deterministic DDIM trajectories for both inversion and tuning.
+        self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
         self.pipe.set_progress_bar_config(disable=True)
         self.pipe.unet.requires_grad_(False)
         self.pipe.vae.requires_grad_(False)
@@ -77,6 +79,7 @@ class DiffusionCore:
         cond_emb: torch.Tensor,
         uncond_emb: torch.Tensor,
         guidance_scale: float,
+        scheduler: DDIMScheduler | None = None,
     ) -> torch.Tensor:
         z_t = torch.nan_to_num(z_t)
         latent_input = torch.cat([z_t, z_t], dim=0).to(dtype=self.pipe.unet.dtype)
@@ -84,7 +87,8 @@ class DiffusionCore:
         noise = self.pipe.unet(latent_input, t, encoder_hidden_states=embeds).sample
         noise_uncond, noise_cond = noise.chunk(2)
         noise_guided = (noise_uncond + guidance_scale * (noise_cond - noise_uncond)).float()
-        prev = self.pipe.scheduler.step(noise_guided, t, z_t.float()).prev_sample
+        active_scheduler = scheduler if scheduler is not None else self.pipe.scheduler
+        prev = active_scheduler.step(noise_guided, t, z_t.float()).prev_sample
         return torch.nan_to_num(prev).to(dtype=z_t.dtype)
 
     def sample_trajectory(
@@ -96,10 +100,11 @@ class DiffusionCore:
         g = guidance_scale if guidance_scale is not None else self.cfg.guidance_scale
         with torch.inference_mode():
             cond, uncond = self.encode_prompt(prompt)
-            self.pipe.scheduler.set_timesteps(self.cfg.num_inference_steps, device=self.cfg.device)
+            scheduler = copy.deepcopy(self.pipe.scheduler)
+            scheduler.set_timesteps(self.cfg.num_inference_steps, device=self.cfg.device)
             trajectory = [z_t.clone()]
             cur = torch.nan_to_num(z_t)
-            for t in self.pipe.scheduler.timesteps:
-                cur = self.denoise_step(cur, t, cond, uncond, g)
+            for t in scheduler.timesteps:
+                cur = self.denoise_step(cur, t, cond, uncond, g, scheduler=scheduler)
                 trajectory.append(cur.clone())
         return trajectory

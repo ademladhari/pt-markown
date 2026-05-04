@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
+import copy
 import torch
-import torch.nn.functional as F
 
 from src.config import PTMarkConfig
 from src.pipelines.base_diffusion import DiffusionCore
@@ -32,7 +32,7 @@ class SemanticAwarePivotalTuning:
         cond, uncond_init = self.core.encode_prompt(prompt)
         cond = cond.clone()
         uncond_init = uncond_init.clone()
-        scheduler = self.core.pipe.scheduler
+        scheduler = copy.deepcopy(self.core.pipe.scheduler)
         scheduler.set_timesteps(self.core.cfg.num_inference_steps, device=self.core.cfg.device)
 
         z_bar = [None] * len(z_hat)
@@ -57,10 +57,18 @@ class SemanticAwarePivotalTuning:
                     cond_emb=cond,
                     uncond_emb=null_emb,
                     guidance_scale=self.core.cfg.guidance_scale,
+                    scheduler=scheduler,
                 )
                 m = latent_difference_mask(z_hat_prev, z_star_prev)
-                l_sem = F.mse_loss(z_pred_prev, z_star_prev)
-                l_wm = torch.mean(torch.abs(m * (z_pred_prev - z_hat_prev)))
+                inv_m = 1.0 - m
+
+                # Preserve semantics mostly outside watermark-salient regions.
+                sem_num = (inv_m * (z_pred_prev - z_star_prev).pow(2)).sum()
+                sem_den = inv_m.sum().clamp_min(1.0)
+                l_sem = sem_num / sem_den
+
+                # Preserve watermark inside salient regions with L1 objective.
+                l_wm = (m * torch.abs(z_pred_prev - z_hat_prev)).sum(dim=(1, 2, 3)).mean()
                 loss = self.cfg.lambda_semantic * l_sem + self.cfg.lambda_watermark * l_wm
 
                 optim.zero_grad(set_to_none=True)
@@ -74,6 +82,7 @@ class SemanticAwarePivotalTuning:
                     cond_emb=cond,
                     uncond_emb=null_emb.detach(),
                     guidance_scale=self.core.cfg.guidance_scale,
+                    scheduler=scheduler,
                 )
             z_bar[i + 1] = z_next
             null_states[i + 1] = null_emb.detach().clone()

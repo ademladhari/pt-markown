@@ -34,24 +34,32 @@ class DDIMInverter:
             scheduler = DDIMScheduler.from_config(self.core.pipe.scheduler.config)
             scheduler.set_timesteps(self.core.cfg.num_inference_steps, device=self.core.cfg.device)
 
-            # Reverse DDIM-like pass: produce increasingly noisy states.
-            trajectory = [z0.clone()]
+            # DDIM inversion pass from z_0 -> z_T on the same inference grid.
+            asc_timesteps = list(reversed(scheduler.timesteps))
+            trajectory_forward = [z0.clone()]
             cur = z0
-            for t in reversed(scheduler.timesteps):
+            for i, t in enumerate(asc_timesteps):
                 t_idx = int(t.item()) if hasattr(t, "item") else int(t)
-                latent_input = torch.cat([torch.nan_to_num(cur), torch.nan_to_num(cur)], dim=0).to(dtype=self.core.pipe.unet.dtype)
+                latent_input = torch.cat([torch.nan_to_num(cur), torch.nan_to_num(cur)], dim=0).to(
+                    dtype=self.core.pipe.unet.dtype
+                )
                 embeds = torch.cat([uncond, cond], dim=0).to(dtype=self.core.pipe.unet.dtype)
                 noise = self.core.pipe.unet(latent_input, t, encoder_hidden_states=embeds).sample
                 noise_uncond, noise_cond = noise.chunk(2)
                 noise_guided = (noise_uncond + self.core.cfg.inversion_guidance_scale * (noise_cond - noise_uncond)).float()
+
                 alpha_t = scheduler.alphas_cumprod[t_idx].float()
-                first_idx = int(scheduler.timesteps[0].item()) if hasattr(scheduler.timesteps[0], "item") else int(scheduler.timesteps[0])
-                next_idx = max(t_idx - 1, 0)
-                next_alpha = alpha_t if t_idx == first_idx else scheduler.alphas_cumprod[next_idx].float()
+                if i + 1 < len(asc_timesteps):
+                    next_t = int(asc_timesteps[i + 1].item()) if hasattr(asc_timesteps[i + 1], "item") else int(asc_timesteps[i + 1])
+                    next_alpha = scheduler.alphas_cumprod[next_t].float()
+                else:
+                    next_alpha = alpha_t
+
                 cur_fp32 = cur.float()
                 cur_fp32 = (cur_fp32 - (1 - alpha_t).sqrt() * noise_guided) / alpha_t.sqrt()
                 cur_fp32 = next_alpha.sqrt() * cur_fp32 + (1 - next_alpha).sqrt() * noise_guided
                 cur = torch.nan_to_num(cur_fp32).to(dtype=z0.dtype)
-                trajectory.append(cur.clone())
-            trajectory.reverse()
-            return trajectory
+                trajectory_forward.append(cur.clone())
+
+            # Return z*_T ... z*_0 to match sampling trajectory indexing.
+            return list(reversed(trajectory_forward))
