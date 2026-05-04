@@ -47,7 +47,8 @@ class SemanticAwarePivotalTuning:
             z_cur = z_bar[i]
             z_star_prev = z_star[i + 1].detach().clone()
             z_hat_prev = z_hat[i + 1].detach().clone()
-            null_emb = null_states[i].detach().clone().requires_grad_(True)
+            # Keep learnable null-text in fp32 for stable optimization.
+            null_emb = null_states[i].detach().clone().float().requires_grad_(True)
             optim = torch.optim.Adam([null_emb], lr=self.cfg.lr_null_text)
             best_null = null_emb.detach().clone()
             best_loss = torch.tensor(float("inf"), device=z_cur.device)
@@ -79,7 +80,6 @@ class SemanticAwarePivotalTuning:
 
                 optim.zero_grad(set_to_none=True)
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_([null_emb], max_norm=1.0)
                 optim.step()
 
             null_emb = best_null
