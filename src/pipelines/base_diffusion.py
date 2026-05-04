@@ -21,6 +21,13 @@ class DiffusionCore:
         ).to(cfg.device)
         self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
         self.pipe.set_progress_bar_config(disable=True)
+        self.pipe.unet.requires_grad_(False)
+        self.pipe.vae.requires_grad_(False)
+        self.pipe.text_encoder.requires_grad_(False)
+        self.pipe.unet.eval()
+        self.pipe.vae.eval()
+        self.pipe.text_encoder.eval()
+        self.pipe.enable_attention_slicing()
 
     def encode_prompt(self, prompt: str) -> Tuple[torch.Tensor, torch.Tensor]:
         tokenizer = self.pipe.tokenizer
@@ -41,7 +48,7 @@ class DiffusionCore:
             truncation=True,
             return_tensors="pt",
         ).to(self.cfg.device)
-        with torch.no_grad():
+        with torch.inference_mode():
             cond = text_encoder(cond_inputs.input_ids)[0]
             uncond = text_encoder(uncond_inputs.input_ids)[0]
         return cond, uncond
@@ -58,9 +65,10 @@ class DiffusionCore:
         )
 
     def decode_latent(self, latent: torch.Tensor) -> torch.Tensor:
-        latent = latent / self.pipe.vae.config.scaling_factor
-        image = self.pipe.vae.decode(latent).sample
-        image = (image / 2 + 0.5).clamp(0, 1)
+        with torch.inference_mode():
+            latent = latent / self.pipe.vae.config.scaling_factor
+            image = self.pipe.vae.decode(latent).sample
+            image = (image / 2 + 0.5).clamp(0, 1)
         return image
 
     def denoise_step(
@@ -75,8 +83,9 @@ class DiffusionCore:
         embeds = torch.cat([uncond_emb, cond_emb], dim=0)
         noise = self.pipe.unet(latent_input, t, encoder_hidden_states=embeds).sample
         noise_uncond, noise_cond = noise.chunk(2)
-        noise_guided = noise_uncond + guidance_scale * (noise_cond - noise_uncond)
-        return self.pipe.scheduler.step(noise_guided, t, z_t).prev_sample
+        noise_guided = (noise_uncond + guidance_scale * (noise_cond - noise_uncond)).float()
+        prev = self.pipe.scheduler.step(noise_guided, t, z_t.float()).prev_sample
+        return prev.to(dtype=z_t.dtype)
 
     def sample_trajectory(
         self,
@@ -85,11 +94,12 @@ class DiffusionCore:
         guidance_scale: float | None = None,
     ) -> List[torch.Tensor]:
         g = guidance_scale if guidance_scale is not None else self.cfg.guidance_scale
-        cond, uncond = self.encode_prompt(prompt)
-        self.pipe.scheduler.set_timesteps(self.cfg.num_inference_steps, device=self.cfg.device)
-        trajectory = [z_t.clone()]
-        cur = z_t
-        for t in self.pipe.scheduler.timesteps:
-            cur = self.denoise_step(cur, t, cond, uncond, g)
-            trajectory.append(cur.clone())
+        with torch.inference_mode():
+            cond, uncond = self.encode_prompt(prompt)
+            self.pipe.scheduler.set_timesteps(self.cfg.num_inference_steps, device=self.cfg.device)
+            trajectory = [z_t.clone()]
+            cur = z_t
+            for t in self.pipe.scheduler.timesteps:
+                cur = self.denoise_step(cur, t, cond, uncond, g)
+                trajectory.append(cur.clone())
         return trajectory

@@ -24,6 +24,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--prompt", required=True, help="Text prompt")
     p.add_argument("--seed", type=int, default=42, help="Random seed")
     p.add_argument("--outdir", type=str, default="runs/single", help="Output directory")
+    p.add_argument(
+        "--num-inference-steps",
+        type=int,
+        default=None,
+        help="Override diffusion inference steps for lower memory or faster runs.",
+    )
+    p.add_argument(
+        "--null-opt-steps",
+        type=int,
+        default=None,
+        help="Override null-text optimization steps for lower memory or faster runs.",
+    )
     return p.parse_args()
 
 
@@ -33,6 +45,10 @@ def main() -> None:
     run_cfg = RunConfig(seed=args.seed, output_dir=args.outdir)
     wm_cfg = WatermarkConfig()
     pt_cfg = PTMarkConfig()
+    if args.num_inference_steps is not None:
+        model_cfg.num_inference_steps = args.num_inference_steps
+    if args.null_opt_steps is not None:
+        pt_cfg.null_opt_steps = args.null_opt_steps
 
     outdir = Path(run_cfg.output_dir)
     outdir.mkdir(parents=True, exist_ok=True)

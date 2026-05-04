@@ -12,7 +12,7 @@ def latent_difference_mask(
     Simple saliency prior from latent differences.
     """
     diff = (z_watermarked_prev - z_original_prev).abs().mean(dim=1, keepdim=True)
-    flat = diff.flatten(start_dim=1)
+    flat = diff.flatten(start_dim=1).float()
     q = torch.quantile(flat, threshold_quantile, dim=1, keepdim=True)
     q = q.view(-1, 1, 1, 1)
     mask = (diff >= q).float()

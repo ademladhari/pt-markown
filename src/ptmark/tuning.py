@@ -30,6 +30,8 @@ class SemanticAwarePivotalTuning:
         z_hat: List[torch.Tensor],
     ) -> PTMarkResult:
         cond, uncond_init = self.core.encode_prompt(prompt)
+        cond = cond.clone()
+        uncond_init = uncond_init.clone()
         scheduler = self.core.pipe.scheduler
         scheduler.set_timesteps(self.core.cfg.num_inference_steps, device=self.core.cfg.device)
 
@@ -43,8 +45,8 @@ class SemanticAwarePivotalTuning:
 
         for i, t in enumerate(scheduler.timesteps):
             z_cur = z_bar[i]
-            z_star_prev = z_star[i + 1].detach()
-            z_hat_prev = z_hat[i + 1].detach()
+            z_star_prev = z_star[i + 1].detach().clone()
+            z_hat_prev = z_hat[i + 1].detach().clone()
             null_emb = null_states[i].detach().clone().requires_grad_(True)
             optim = torch.optim.Adam([null_emb], lr=self.cfg.lr_null_text)
 
