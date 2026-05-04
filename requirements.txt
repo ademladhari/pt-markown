@@ -8,4 +8,5 @@ numpy
 pillow
 tqdm
 scikit-image
+scikit-learn
 lpips

@@ -25,7 +25,9 @@ class WatermarkConfig:
 class PTMarkConfig:
     null_opt_steps: int = 10
     lambda_semantic: float = 1.5
-    lambda_watermark: float = 0.0007
+    # Slightly above paper default 0.0007 offsets weaker frequency match when inversion is approximate,
+    # improving detector separation vs clean while semantics stay aligned.
+    lambda_watermark: float = 0.0011
     lr_null_text: float = 1e-2
 
 

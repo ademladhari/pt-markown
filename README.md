@@ -34,8 +34,16 @@ Outputs:
 python scripts/verify_single.py --prompt "A fantasy innkeeper portrait" --image runs/single/pt_mark.png
 ```
 
+## ROC / AUC (watermarked vs clean)
+
+Runs one full pipeline per seed (clean, Tree-Ring baseline, PT-Mark), then reports **ROC AUC** with labels: watermarked = 1, clean = 0. Detector scores are inverted so that higher values mean “more likely watermarked” for `sklearn`.
+
+```bash
+python scripts/eval_roc_watermark.py --prompt "A fantasy innkeeper portrait" --num-seeds 8 --out-json runs/roc_summary.json
+```
+
 ## Notes
 
 - This is an implementation scaffold oriented for thesis experimentation.
 - DDIM inversion and saliency are intentionally lightweight first-pass implementations and should be refined for strict reproduction-quality results.
-- Next recommended step is adding batch evaluation scripts for AUC/PSNR/SSIM and perturbation robustness (JPEG/crop/blur/noise/brightness/rotation).
+- For robustness AUC under JPEG/crop/blur/etc., extend the same scoring loop with `src/evaluation/attacks.py` if present.
