@@ -1,0 +1,11 @@
+torch
+torchvision
+diffusers
+transformers
+accelerate
+scipy
+numpy
+pillow
+tqdm
+scikit-image
+lpips
