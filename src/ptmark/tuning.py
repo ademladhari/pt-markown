@@ -49,6 +49,10 @@ class SemanticAwarePivotalTuning:
             z_hat_prev = z_hat[i + 1].detach().clone()
             null_emb = null_states[i].detach().clone().requires_grad_(True)
             optim = torch.optim.Adam([null_emb], lr=self.cfg.lr_null_text)
+            best_null = null_emb.detach().clone()
+            best_loss = torch.tensor(float("inf"), device=z_cur.device)
+            best_l_sem = torch.tensor(float("inf"), device=z_cur.device)
+            best_l_wm = torch.tensor(float("inf"), device=z_cur.device)
 
             for _ in range(self.cfg.null_opt_steps):
                 z_pred_prev = self.core.denoise_step(
@@ -60,20 +64,25 @@ class SemanticAwarePivotalTuning:
                     scheduler=scheduler,
                 )
                 m = latent_difference_mask(z_hat_prev, z_star_prev)
-                inv_m = 1.0 - m
-
-                # Preserve semantics mostly outside watermark-salient regions.
-                sem_num = (inv_m * (z_pred_prev - z_star_prev).pow(2)).sum()
-                sem_den = inv_m.sum().clamp_min(1.0)
-                l_sem = sem_num / sem_den
+                # Match the paper objective: semantic consistency to pivotal trajectory.
+                l_sem = (z_pred_prev - z_star_prev).pow(2).mean()
 
                 # Preserve watermark inside salient regions with L1 objective.
                 l_wm = (m * torch.abs(z_pred_prev - z_hat_prev)).sum(dim=(1, 2, 3)).mean()
                 loss = self.cfg.lambda_semantic * l_sem + self.cfg.lambda_watermark * l_wm
 
+                if loss.detach() < best_loss:
+                    best_loss = loss.detach().clone()
+                    best_l_sem = l_sem.detach().clone()
+                    best_l_wm = l_wm.detach().clone()
+                    best_null = null_emb.detach().clone()
+
                 optim.zero_grad(set_to_none=True)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_([null_emb], max_norm=1.0)
                 optim.step()
+
+            null_emb = best_null
 
             with torch.no_grad():
                 z_next = self.core.denoise_step(
@@ -86,9 +95,9 @@ class SemanticAwarePivotalTuning:
                 )
             z_bar[i + 1] = z_next
             null_states[i + 1] = null_emb.detach().clone()
-            losses["semantic"].append(float(l_sem.detach().cpu()))
-            losses["watermark"].append(float(l_wm.detach().cpu()))
-            losses["total"].append(float(loss.detach().cpu()))
+            losses["semantic"].append(float(best_l_sem.detach().cpu()))
+            losses["watermark"].append(float(best_l_wm.detach().cpu()))
+            losses["total"].append(float(best_loss.detach().cpu()))
 
         return PTMarkResult(
             trajectory=z_bar,

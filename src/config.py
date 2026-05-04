@@ -26,7 +26,8 @@ class PTMarkConfig:
     null_opt_steps: int = 10
     lambda_semantic: float = 1.5
     lambda_watermark: float = 0.0007
-    lr_null_text: float = 1e-2
+    # Lower LR improves null-text stability and avoids semantic collapse.
+    lr_null_text: float = 5e-3
 
 
 @dataclass
