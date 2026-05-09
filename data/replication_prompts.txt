@@ -1,0 +1,29 @@
+# MS-COCO-style captions for a small replication sweep (one prompt per line).
+# Replace or extend with your own list; use --prompts-file path/to/coco_captions.txt
+
+A professional portrait photo of a smiling shopkeeper behind a wooden counter.
+A red double-decker bus driving through a busy city street at dusk.
+A fluffy orange cat sleeping on a sunny windowsill.
+Two children flying a colorful kite on a green meadow.
+A steaming cup of coffee next to an open laptop on a cafe table.
+Snow-covered mountains reflecting in a calm alpine lake.
+An old stone bridge over a small river in autumn forest.
+A chef slicing vegetables in a bright modern kitchen.
+Vintage leather armchair and reading lamp in a cozy study.
+A sailboat on blue water under a partly cloudy sky.
+Tennis player mid-swing on a clay court, side view.
+Farmers market stall with fresh fruit and handwritten signs.
+Northern lights over a snowy landscape and dark trees.
+A bee on a bright purple lavender flower macro shot.
+Urban alley with murals and bicycles parked near a wall.
+Fresh croissants and orange juice breakfast on marble table.
+Hikers with backpacks overlooking a canyon at sunrise.
+A golden retriever catching a tennis ball mid-air at the park.
+Rainy city street reflections with umbrellas and neon signs.
+Ancient temple ruins overgrown with jungle vegetation.
+Basketball hoop and chain net on an outdoor suburban court.
+A bowl of ramen with chopsticks lifting noodles steam rising.
+Vintage typewriter on a wooden desk beside a vase of tulips.
+A lighthouse on a rocky coastline during golden hour.
+Woman riding a bicycle with a wicker basket filled with flowers.
+Macro photo of dew drops on green grass at dawn.

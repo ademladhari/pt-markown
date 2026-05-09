@@ -42,6 +42,25 @@ Runs one full pipeline per seed (clean, Tree-Ring baseline, PT-Mark), then repor
 python scripts/eval_roc_watermark.py --prompt "A fantasy innkeeper portrait" --num-seeds 8 --out-json runs/roc_summary.json
 ```
 
+## Larger replication sweep (recommended for thesis wording)
+
+Runs **many prompts** (default `data/replication_prompts.txt`, one caption per line), **one GPU load**, and writes `runs/replication_benchmark.json` with:
+
+- per-prompt PSNR / SSIM / LPIPS (clean vs Tree-Ring, clean vs PT-Mark)
+- detector scores (clean / baseline / PT-Mark)
+- **pooled ROC AUC** (Tree-Ring vs clean, PT-Mark vs clean)
+- **mean ± std** across prompts (compare directionally to paper Table 1; full paper scale is thousands of captions)
+
+```bash
+python scripts/eval_replication_benchmark.py --prompts-file data/replication_prompts.txt --out-json runs/replication_benchmark.json
+```
+
+Quick dry run (first 3 prompts only):
+
+```bash
+python scripts/eval_replication_benchmark.py --limit 3 --out-json runs/replication_smoke.json
+```
+
 ## Notes
 
 - This is an implementation scaffold oriented for thesis experimentation.

@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 
 from src.config import ModelConfig, PTMarkConfig, WatermarkConfig
 from src.evaluation.roc_metrics import format_roc_report, roc_watermark_vs_clean
+from src.pipelines.base_diffusion import DiffusionCore
 from src.ptmark.run_once import run_ptmark_once_scores
 
 
@@ -50,10 +51,14 @@ def main() -> None:
 
     summary: dict = {"prompt": args.prompt, "num_seeds": args.num_seeds, "methods": {}}
 
+    # One load only: previously each seed re-called from_pretrained (~minutes per seed on Colab).
+    print("Loading diffusion pipeline (once) ...", flush=True)
+    core = DiffusionCore(mc)
+
     for i in range(args.num_seeds):
         sid = args.seed_start + i
         print(f"seed={sid} ...", flush=True)
-        scores = run_ptmark_once_scores(args.prompt, sid, mc, wc, pc)
+        scores = run_ptmark_once_scores(args.prompt, sid, mc, wc, pc, core=core)
         clean_scores.append(scores.clean)
         baseline_wm.append(scores.tree_ring_baseline)
         pt_scores.append(scores.pt_mark)

@@ -42,9 +42,12 @@ def run_ptmark_once_scores(
     model_cfg: ModelConfig,
     wm_cfg: WatermarkConfig,
     pt_cfg: PTMarkConfig,
+    core: DiffusionCore | None = None,
 ) -> PTMarkDetectionScores:
+    """If ``core`` is omitted, loads a new pipeline (slow). For batch ROC, pass a single shared ``core``."""
     torch.manual_seed(seed)
-    core = DiffusionCore(model_cfg)
+    if core is None:
+        core = DiffusionCore(model_cfg)
     inverter = DDIMInverter(core)
     watermark = TreeRingWatermark(wm_cfg)
     detector = WatermarkDetector(watermark)
